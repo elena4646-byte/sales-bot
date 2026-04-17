@@ -11,8 +11,11 @@ from telegram.ext import Application, MessageHandler, CommandHandler, filters, C
 from report_analyzer import parse_report, generate_pdf
 
 # ===== НАСТРОЙКИ =====
-BOT_TOKEN = os.environ.get('BOT_TOKEN', 'ВСТАВЬТЕ_СЮДА_ТОКЕН_ОТ_BOTFATHER')
-ALLOWED_USER_ID = int(os.environ.get('ALLOWED_USER_ID', '0'))  # ваш Telegram ID, 0 = без ограничения
+# ВСТАВЬТЕ СВОЙ ТОКЕН ОТ BOTFATHER МЕЖДУ КАВЫЧКАМИ НИЖЕ:
+BOT_TOKEN = '8769728583:AAGlxs1A1mIN9bhkTueMu_z71ZO1VLTfUM8'
+
+# Ваш Telegram ID (чтобы бот работал только для вас)
+ALLOWED_USER_ID = 418375683
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -22,11 +25,9 @@ logger = logging.getLogger(__name__)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /start"""
     if ALLOWED_USER_ID and update.effective_user.id != ALLOWED_USER_ID:
         await update.message.reply_text("⛔ Нет доступа")
         return
-    
     await update.message.reply_text(
         "👋 Привет!\n\n"
         "Отправь мне Excel-файл с отчётом по часу продаж, "
@@ -36,7 +37,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /help"""
     await update.message.reply_text(
         "📖 Как пользоваться:\n\n"
         "1. Отправь мне Excel-файл отчёта (.xlsx)\n"
@@ -45,13 +45,11 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• Сравнение подразделений (Казахстан)\n"
         "• Сравнение регионов сети\n"
         "• Анализ отклонений от эталона (Kari)\n"
-        "• Выводы и рекомендации"
+        "• Карточки по каждому подразделению"
     )
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка полученного файла"""
-    # Проверка доступа
     if ALLOWED_USER_ID and update.effective_user.id != ALLOWED_USER_ID:
         await update.message.reply_text("⛔ Нет доступа")
         return
@@ -64,20 +62,16 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_msg = await update.message.reply_text("⏳ Обрабатываю отчёт...")
     
     try:
-        # Временные файлы
         with tempfile.TemporaryDirectory() as tmp:
             xlsx_path = os.path.join(tmp, 'input.xlsx')
             pdf_path = os.path.join(tmp, 'report.pdf')
             
-            # Скачиваем Excel
             file = await doc.get_file()
             await file.download_to_drive(xlsx_path)
             
-            # Парсим и генерируем PDF
             data = parse_report(xlsx_path)
             generate_pdf(data, pdf_path)
             
-            # Отправляем PDF
             date_str = data['meta'].get('date', '').replace('.', '-')
             time_str = data['meta'].get('time', '').replace(':', '-')
             out_name = f"Анализ_{date_str}_{time_str}.pdf"
@@ -88,7 +82,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     filename=out_name,
                     caption=(
                         f"✅ Готово!\n"
-                        f"📊 Обработано: {len(data['stores'])} магазинов, "
+                        f"📊 {len(data['stores'])} магазинов, "
                         f"{len(data['podr'])} подразделений, "
                         f"{len(data['totals'])} регионов"
                     )
@@ -102,7 +96,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Любой текст"""
     if ALLOWED_USER_ID and update.effective_user.id != ALLOWED_USER_ID:
         return
     await update.message.reply_text(
@@ -112,9 +105,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    """Запуск бота"""
-    if BOT_TOKEN == 'ВСТАВЬТЕ_СЮДА_ТОКЕН_ОТ_BOTFATHER':
-        print("❌ Укажите BOT_TOKEN в переменной окружения или в коде!")
+    if BOT_TOKEN == 'ВСТАВЬТЕ_СЮДА_ВАШ_ТОКЕН':
+        print("❌ Откройте bot.py и вставьте токен от BotFather в строку BOT_TOKEN!")
         return
     
     app = Application.builder().token(BOT_TOKEN).build()
@@ -123,7 +115,7 @@ def main():
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     
-    print("🤖 Бот запущен. Нажми Ctrl+C для остановки.")
+    print("🤖 Бот запущен!")
     app.run_polling()
 
 
