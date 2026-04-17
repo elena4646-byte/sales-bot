@@ -104,10 +104,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-def main():
-    if BOT_TOKEN == 'ВСТАВЬТЕ_СЮДА_ВАШ_ТОКЕН':
-        print("❌ Откройте bot.py и вставьте токен от BotFather в строку BOT_TOKEN!")
-        return
+   async def main():
     
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler('start', start))
@@ -116,8 +113,9 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     
     print("🤖 Бот запущен!")
-    app.run_polling()
+   await app.run_polling()
 
 
 if __name__ == '__main__':
-    main()
+    import asyncio
+    asyncio.run(main())
