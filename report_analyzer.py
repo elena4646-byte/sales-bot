@@ -171,13 +171,13 @@ def generate_pdf(data, output_path):
     
     # Легенда
     kari_plan_str = fmt_num(kari_total.get('plan_pct') if kari_total else None, 1, percent=True)
-    kari_kop_str = fmt_num(kari_total.get('kop') if kari_total else None, 1, percent=True)
-    kari_sch_str = fmt_num(kari_total.get('sch') if kari_total else None, 0)
+    kz_kop_str = fmt_num(kz_total.get('kop') if kz_total else None, 1, percent=True)
+    kz_sch_str = fmt_num(kz_total.get('sch') if kz_total else None, 0)
     
     legend_text = (
-        f"<b>Эталоны:</b> Ср.ТО — лучший по КЗ, План ≥ Kari ({kari_plan_str}), "
-        f"КОП ≥ Kari ({kari_kop_str}), ПвЧ ≥ 1.5, Шт/чек ≥ 2.0, СЧ ≥ Kari ({kari_sch_str}), "
-        f"Трафик — лучший по КЗ, ЮИ ≥ 10%, Серебро ≥ 5%, Золото ≥ 10%, Сумки ≥ 6%. "
+        f"<b>Эталоны:</b> Ср.ТО — топ-2 лучших, План ≥ Kari ({kari_plan_str}), "
+        f"КОП ≥ КЗ ({kz_kop_str}), ПвЧ ≥ 1.5, Шт/чек ≥ 2.0, СЧ ≥ КЗ ({kz_sch_str}), "
+        f"ЮИ ≥ 10%, Серебро ≥ 5%, Золото ≥ 10%, Сумки ≥ 6%. "
         f"<font backcolor='#7ED97E' color='#003300'><b>&nbsp;Топ-2&nbsp;</b></font> &nbsp;"
         f"<font backcolor='#FF8A8A' color='#660000'><b>&nbsp;Ниже нормы&nbsp;</b></font> &nbsp;"
         f"<font backcolor='#E31B1B' color='#FFFFFF'><b>&nbsp;Ноль&nbsp;</b></font>"
@@ -243,54 +243,52 @@ def generate_pdf(data, output_path):
     RED_TEXT = colors.HexColor('#660000')
     WHITE = colors.white
     
-    # Лучшие значения по КЗ (для Ср.ТО и Трафика)
+    # Лучшие значения по КЗ
     best_to_kz = max((p.get('avg_to') for p in data['podr'].values() if p.get('avg_to') is not None), default=None)
-    best_traffic_kz = max((p.get('avg_traffic') for p in data['podr'].values() if p.get('avg_traffic') is not None), default=None)
     
     # Пороги (эталоны). None = не проверяем
     kari_plan = kari_total.get('plan_pct') if kari_total else None
-    kari_kop = kari_total.get('kop') if kari_total else None
-    kari_sch = kari_total.get('sch') if kari_total else None
+    kz_kop = kz_total.get('kop') if kz_total else None       # КОП по КЗ
+    kz_sch = kz_total.get('sch') if kz_total else None       # СЧ по КЗ
     
-    # Правила: ключ → (эталон, правило сравнения)
-    # Правила:
-    #   'eq_best' — равен лучшему по КЗ (для ТО и Трафика)
-    #   'gte' — значение >= эталона
-    # Проценты хранятся как доли (0.10 = 10%)
+    # Правила подсветки:
+    #   'top2_only' — только топ-2 зелёным, красный НЕ рисуем
+    #   'gte' — красный если ниже эталона, зелёный только топ-2
+    #   'skip' — не закрашивать вообще
     RULES = {
-        'to':          ('eq_best', best_to_kz),
-        'plan_pct':    ('gte',     kari_plan),   # выше Kari
-        'kop':         ('gte',     kari_kop),    # выше Kari
+        'to':          ('top2_only', best_to_kz),     # только топ-2 зелёным, без красного
+        'plan_pct':    ('gte',     kari_plan),         # выше Kari
+        'kop':         ('gte',     kz_kop),            # выше КЗ
         'pvch':        ('gte',     1.5),
         'items_check': ('gte',     2.0),
-        'sch':         ('gte',     kari_sch),    # не ниже Kari
-        'traffic':     ('eq_best', best_traffic_kz),
-        'yui':         ('gte',     0.10),   # не менее 10%
-        'silver':      ('gte',     0.05),   # не ниже 5%
-        'gold':        ('gte',     0.10),   # не ниже 10%
-        'bags':        ('gte',     0.06),   # не ниже 6%
+        'sch':         ('gte',     kz_sch),            # не ниже КЗ
+        'traffic':     ('skip',    None),              # не закрашивать
+        'yui':         ('gte',     0.10),
+        'silver':      ('gte',     0.05),
+        'gold':        ('gte',     0.10),
+        'bags':        ('gte',     0.06),
     }
     
     def paint_cell(style_obj, col, row, value, rule_type, target):
-        """Красит только красным (не дотягивает норму) или ярко-красным (ноль).
-        Зелёная подсветка применяется отдельно — только для топ-2 лучших."""
+        """Красит красным если не дотягивает до нормы, ярко-красным если ноль.
+        top2_only и skip — красным не красим."""
         if value is None:
             return
-        # Нули — агрессивный красный
+        # Нули — агрессивный красный (всегда)
         if value == 0:
             style_obj.add('BACKGROUND', (col, row), (col, row), RED_AGGRESSIVE)
             style_obj.add('TEXTCOLOR', (col, row), (col, row), WHITE)
             style_obj.add('FONTNAME', (col, row), (col, row), 'DejaVu-Bold')
             return
+        # top2_only и skip — красным не красим
+        if rule_type in ('top2_only', 'skip'):
+            return
         if target is None:
             return
-        if rule_type == 'eq_best':
-            passed = abs(value - target) < 1e-6
-        elif rule_type == 'gte':
+        if rule_type == 'gte':
             passed = value >= target
         else:
             return
-        # Норма не выполнена → красный; выполнена → без заливки (зелёный ставим отдельно)
         if not passed:
             style_obj.add('BACKGROUND', (col, row), (col, row), RED)
             style_obj.add('TEXTCOLOR', (col, row), (col, row), RED_TEXT)
@@ -318,8 +316,11 @@ def generate_pdf(data, output_path):
         for col, key in metrics_map:
             rule_type, target = RULES.get(key, (None, None))
             paint_cell(ts, col, i, p.get(f'avg_{key}'), rule_type, target)
-    # Потом сверху накрываем зелёным топ-2 лучших (перекрывает красный если случайно совпало)
+    # Потом сверху накрываем зелёным топ-2 лучших (кроме skip-метрик)
     for col, key in metrics_map:
+        rule_type, _ = RULES.get(key, (None, None))
+        if rule_type == 'skip':
+            continue  # трафик не закрашиваем вообще
         rows_vals = [(i, p.get(f'avg_{key}')) for i, p in enumerate(podr_sorted, 1)]
         highlight_top2(ts, col, rows_vals)
     
@@ -370,16 +371,15 @@ def generate_pdf(data, output_path):
     # Для ТО и Трафика в таблице регионов "лучший" = максимум среди регионов (исключая Kari)
     comparable_totals = [r for r in regions_sorted if 'Kari' not in r.get('region', '')]
     best_to_reg = max((r.get('to') for r in comparable_totals if r.get('to') is not None), default=None)
-    best_traffic_reg = max((r.get('traffic') for r in comparable_totals if r.get('traffic') is not None), default=None)
     
     REGION_RULES = {
-        'to':          ('eq_best', best_to_reg),
+        'to':          ('top2_only', best_to_reg),     # только топ-2, без красного
         'plan_pct':    ('gte',     kari_plan),
-        'kop':         ('gte',     kari_kop),
+        'kop':         ('gte',     kz_kop),            # по КЗ
         'pvch':        ('gte',     1.5),
         'items_check': ('gte',     2.0),
-        'sch':         ('gte',     kari_sch),
-        'traffic':     ('eq_best', best_traffic_reg),
+        'sch':         ('gte',     kz_sch),            # по КЗ
+        'traffic':     ('skip',    None),              # не закрашивать
         'yui':         ('gte',     0.10),
         'silver':      ('gte',     0.05),
         'gold':        ('gte',     0.10),
@@ -411,8 +411,11 @@ def generate_pdf(data, output_path):
             ts2.add('LINEBELOW', (0, i), (-1, i), 1.5, colors.HexColor('#1F4E78'))
             ts2.add('FONTNAME', (0, i), (0, i), 'DejaVu-Bold')
     
-    # Потом зелёным топ-2 (без Kari)
+    # Потом зелёным топ-2 (без Kari, без skip-метрик)
     for col, key in reg_metrics:
+        rule_type, _ = REGION_RULES.get(key, (None, None))
+        if rule_type == 'skip':
+            continue
         rows_vals = [(i, r.get(key)) for i, r in comparable_rows]
         highlight_top2(ts2, col, rows_vals)
     
@@ -440,12 +443,14 @@ def generate_pdf(data, output_path):
                 return None, '—', '—'
             if value == 0:
                 return False, fmt_num(value, digits, percent=fmt_percent) + ' ⚠️', fmt_num(target, digits, percent=fmt_percent) if target else '—'
+            if rule_type in ('top2_only', 'skip'):
+                return None, fmt_num(value, digits, percent=fmt_percent), '—'
             if target is None:
                 return None, fmt_num(value, digits, percent=fmt_percent), '—'
-            if rule_type == 'eq_best':
-                passed = abs(value - target) < 1e-6
-            else:  # gte
+            if rule_type == 'gte':
                 passed = value >= target
+            else:
+                passed = None
             return passed, fmt_num(value, digits, percent=fmt_percent), fmt_num(target, digits, percent=fmt_percent)
         
         # Для каждого подразделения делаем карточку
@@ -453,13 +458,13 @@ def generate_pdf(data, output_path):
         all_cards = []
         for p in podr_sorted:
             checks = [
-                ('ТО',       p.get('avg_to'),          'eq_best', best_to_kz,     False, 0),
+                ('ТО',       p.get('avg_to'),          'top2_only', best_to_kz,     False, 0),
                 ('План',     p.get('avg_plan_pct'),    'gte',     kari_plan,      True,  1),
-                ('КОП',      p.get('avg_kop'),         'gte',     kari_kop,       True,  1),
+                ('КОП',      p.get('avg_kop'),         'gte',     kz_kop,        True,  1),
                 ('ПвЧ',      p.get('avg_pvch'),        'gte',     1.5,            False, 2),
                 ('Шт/чек',   p.get('avg_items_check'), 'gte',     2.0,            False, 2),
-                ('СЧ',       p.get('avg_sch'),         'gte',     kari_sch,       False, 0),
-                ('Трафик',   p.get('avg_traffic'),     'eq_best', best_traffic_kz,False, 0),
+                ('СЧ',       p.get('avg_sch'),         'gte',     kz_sch,        False, 0),
+                ('Трафик',   p.get('avg_traffic'),     'skip',    None,           False, 0),
                 ('ЮИ',       p.get('avg_yui'),         'gte',     0.10,           True,  1),
                 ('Серебро',  p.get('avg_silver'),      'gte',     0.05,           True,  1),
                 ('Золото',   p.get('avg_gold'),        'gte',     0.10,           True,  1),
@@ -591,6 +596,113 @@ def generate_pdf(data, output_path):
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ]))
         story.append(grid)
+    
+    # ====== БЛОК 4: КОММЕНТАРИИ ДИРЕКТОРА ПО ПРОДАЖАМ ======
+    story.append(Spacer(1, 10))
+    
+    dir_style = ParagraphStyle('Dir', parent=normal, fontName='DejaVu-Bold',
+                                fontSize=16, textColor=colors.HexColor('#1F4E78'),
+                                spaceBefore=10, spaceAfter=8)
+    comment_style = ParagraphStyle('Comment', parent=normal, fontSize=13, leading=17,
+                                    leftIndent=10, spaceBefore=4, spaceAfter=4)
+    good_comment = ParagraphStyle('GoodComment', parent=comment_style,
+                                   textColor=colors.HexColor('#1B5E20'))
+    bad_comment = ParagraphStyle('BadComment', parent=comment_style,
+                                  textColor=colors.HexColor('#B71C1C'))
+    
+    story.append(Paragraph("Комментарии", dir_style))
+    
+    if kari_total and kz_total and podr_sorted:
+        comments = []
+        
+        # --- ЛИДЕРЫ ---
+        leader_to = podr_sorted[0]
+        leader_plan = max(podr_sorted, key=lambda x: x.get('avg_plan_pct') or 0)
+        
+        comments.append(('good', f"<b>{leader_to['name']}</b> — лидер по обороту "
+                         f"({fmt_num(leader_to['avg_to'])} тг). "
+                         f"{'Держим темп, не сбавляем!' if leader_to.get('avg_plan_pct', 0) > (kari_total.get('plan_pct') or 0) else 'Но план требует внимания — нужно дожать.'}"))
+        
+        if leader_plan['name'] != leader_to['name']:
+            comments.append(('good', f"<b>{leader_plan['name']}</b> — лучший по выполнению плана "
+                             f"({fmt_num(leader_plan['avg_plan_pct'], 1, percent=True)}). Молодцы!"))
+        
+        # Лучший по КОП
+        best_kop = max(podr_sorted, key=lambda x: x.get('avg_kop') or 0)
+        if best_kop.get('avg_kop') and kz_kop and best_kop['avg_kop'] > kz_kop * 1.1:
+            comments.append(('good', f"<b>{best_kop['name']}</b> — сильная конверсия "
+                             f"({fmt_num(best_kop['avg_kop'], 1, percent=True)}). "
+                             f"Хороший пример работы с трафиком."))
+        
+        # Лучший по допам (ЮИ + серебро + золото + сумки)
+        def total_dops(p):
+            return sum(p.get(f'avg_{k}') or 0 for k in ['yui', 'silver', 'gold', 'bags'])
+        best_dops = max(podr_sorted, key=total_dops)
+        comments.append(('good', f"<b>{best_dops['name']}</b> — лучшая допродажа по совокупности "
+                         f"(ЮИ + серебро + золото + сумки). Берём как ориентир."))
+        
+        # --- ПРОБЛЕМНЫЕ ---
+        # Худший по плану
+        worst_plan = min(podr_sorted, key=lambda x: x.get('avg_plan_pct') or 999)
+        if worst_plan.get('avg_plan_pct') and kari_total.get('plan_pct'):
+            gap = (kari_total['plan_pct'] - worst_plan['avg_plan_pct']) / kari_total['plan_pct']
+            if gap > 0.15:
+                comments.append(('bad', f"<b>{worst_plan['name']}</b> — критическое отставание от плана "
+                                 f"({fmt_num(worst_plan['avg_plan_pct'], 1, percent=True)} при норме "
+                                 f"{fmt_num(kari_total.get('plan_pct'), 1, percent=True)}). "
+                                 f"Нужен разбор причин и план мероприятий."))
+        
+        # Низкая ПвЧ
+        low_pvch = [p for p in podr_sorted if p.get('avg_pvch') and p['avg_pvch'] < 1.4]
+        if low_pvch:
+            names = ', '.join(f"<b>{p['name']}</b> ({p['avg_pvch']:.2f})" for p in low_pvch)
+            comments.append(('bad', f"Низкая ПвЧ: {names}. "
+                             f"Проработать стандарт комплексной продажи — обувь + аксессуар."))
+        
+        # Низкий шт/чек
+        low_items = [p for p in podr_sorted if p.get('avg_items_check') and p['avg_items_check'] < 1.8]
+        if low_items:
+            names = ', '.join(f"<b>{p['name']}</b> ({p['avg_items_check']:.2f})" for p in low_items)
+            comments.append(('bad', f"Штук в чеке ниже 1.8: {names}. "
+                             f"Усилить работу с апселлом и связками."))
+        
+        # Нулевые показатели
+        zeros = []
+        for p in podr_sorted:
+            for key, label in [('avg_gold', 'золото'), ('avg_silver', 'серебро'), ('avg_yui', 'ЮИ')]:
+                if p.get(key) == 0:
+                    zeros.append(f"<b>{p['name']}</b> ({label})")
+        if zeros:
+            comments.append(('bad', f"Нулевые показатели: {', '.join(zeros)}. "
+                             f"Срочно проверить выкладку, наличие товара и мотивацию персонала."))
+        
+        # Низкая ЮИ (ниже 5%)
+        low_yui = [p for p in podr_sorted if p.get('avg_yui') is not None 
+                   and p['avg_yui'] < 0.05 and p['avg_yui'] > 0]
+        if low_yui:
+            names = ', '.join(f"<b>{p['name']}</b> ({fmt_num(p['avg_yui'], 1, percent=True)})" for p in low_yui)
+            comments.append(('bad', f"ЮИ ниже 5%: {names}. "
+                             f"Потенциал роста за счёт ювелирной — подключить обучение."))
+        
+        # КЗ vs Kari
+        if kz_total.get('plan_pct') and kari_total.get('plan_pct'):
+            if kz_total['plan_pct'] > kari_total['plan_pct']:
+                comments.append(('good', f"Казахстан обгоняет среднюю по сети: план "
+                                 f"{fmt_num(kz_total['plan_pct'], 1, percent=True)} vs Kari "
+                                 f"{fmt_num(kari_total['plan_pct'], 1, percent=True)}. Так держать!"))
+            else:
+                diff_pct = (kari_total['plan_pct'] - kz_total['plan_pct']) / kari_total['plan_pct']
+                comments.append(('bad', f"Казахстан отстаёт от сети: план "
+                                 f"{fmt_num(kz_total['plan_pct'], 1, percent=True)} vs Kari "
+                                 f"{fmt_num(kari_total['plan_pct'], 1, percent=True)}. "
+                                 f"{'Разрыв критический — нужно собрание.' if diff_pct > 0.15 else 'Нужно подтянуть.'}"))
+        
+        # Выводим комментарии
+        for ctype, text in comments:
+            if ctype == 'good':
+                story.append(Paragraph(f"✅ {text}", good_comment))
+            else:
+                story.append(Paragraph(f"⚠️ {text}", bad_comment))
     
     doc.build(story)
     return output_path
