@@ -7,7 +7,7 @@ from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
 from report_analyzer import parse_report, generate_pdf
 
-BOT_TOKEN = '8769728583:AAGlxs1A1mIN9bhkTueMu_z71ZO1VLTfUM8'
+BOT_TOKEN = 8769728583:AAGlxs1A1mIN9bhkTueMu_z71ZO1VLTfUM8
 ALLOWED_USER_ID = 418375683
 
 logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
